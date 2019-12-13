@@ -47,7 +47,8 @@ class QVideoWriter
 		FILE *video_file;
 		AVFrame *frame;
 		AVPacket *pkt;
-		uint8_t endcode[];
+		uint8_t endcode[4];
+		SwsContext *img_convert_ctx; 
 
 		void encode_frame(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile);
    public:

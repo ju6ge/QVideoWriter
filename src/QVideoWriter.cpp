@@ -8,6 +8,7 @@ QVideoWriter::QVideoWriter(): endcode{ 0, 0, 1, 0xb7 } {
 	video_file = nullptr;
 	frame = nullptr;
 	pkt = nullptr;
+	img_convert_ctx = nullptr;
 }
 
 void QVideoWriter::encode_frame(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile) {
@@ -45,7 +46,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 
 	int ret;
 	//Setup FFmpeg correctly
-	QString codec_name = "libx264";
+	QString codec_name = "mpeg4";
 	codec = avcodec_find_encoder_by_name(codec_name.toStdString().c_str());
 	if (!codec) {
 		QString error_msg = QString("Codec %1 not found\n").arg(codec_name);
@@ -78,7 +79,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	*/
 	c->gop_size = 10;
 	c->max_b_frames = 1;
-	c->pix_fmt = AV_PIX_FMT_ARGB;
+	c->pix_fmt = AV_PIX_FMT_YUV420P;
 
 	if (codec->id == AV_CODEC_ID_H264)
 		av_opt_set(c->priv_data, "preset", "slow", 0);
@@ -86,7 +87,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	/* open it */
 	ret = avcodec_open2(c, codec, NULL);
 	if (ret < 0) {
-		QString error_msg = QString("Could not open codec erro code %1\n").arg(ret);
+		QString error_msg = QString("Could not open codec error code %1\n").arg(ret);
 		throw VideoWriterError( error_msg.toStdString() );
 	}
 
@@ -124,7 +125,23 @@ void QVideoWriter::addFrame(const QImage &frame_image) {
 		throw VideoWriterError("Frame is now writeable!\n");
 
 	//Todo put image data in frame
-	memcpy(frame->data, frame_image.bits(), sizeof(frame->data));
+	img_convert_ctx = sws_getCachedContext(img_convert_ctx, video_width, video_height,AV_PIX_FMT_BGRA, video_width, video_height,AV_PIX_FMT_YUV420P,SWS_BICUBIC, NULL, NULL, NULL);
+	if (img_convert_ctx == NULL) {
+		throw VideoWriterError("Cannot initialize the conversion context\n");
+	}
+
+	uint8_t *srcplanes[3];
+	srcplanes[0]=(uint8_t*)frame_image.bits();
+	srcplanes[1]=0;
+	srcplanes[2]=0;
+
+	int srcstride[3];
+	srcstride[0]=frame_image.bytesPerLine();
+	srcstride[1]=0;
+	srcstride[2]=0;
+
+
+	sws_scale(img_convert_ctx, srcplanes, srcstride,0, video_height, frame->data, frame->linesize);
 	frame->pts = frame_cnt;
 
 	/* encode the image */
