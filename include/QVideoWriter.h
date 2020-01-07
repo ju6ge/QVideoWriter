@@ -44,6 +44,9 @@ class QVideoWriter
 
 		AVCodec *codec;
 		AVCodecContext *c;
+		AVFormatContext *output_c;
+		AVOutputFormat *output_f;
+		AVStream *video_stream;
 		FILE *video_file;
 		AVFrame *frame;
 		AVPacket *pkt;

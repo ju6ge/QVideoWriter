@@ -5,7 +5,10 @@
 QVideoWriter::QVideoWriter(): endcode{ 0, 0, 1, 0xb7 } {
 	codec = nullptr;
 	c = nullptr;
+	output_c = nullptr;
+	output_f = nullptr;
 	video_file = nullptr;
+	video_stream = nullptr;
 	frame = nullptr;
 	pkt = nullptr;
 	img_convert_ctx = nullptr;
@@ -15,8 +18,8 @@ void QVideoWriter::encode_frame(AVCodecContext *enc_ctx, AVFrame *frame, AVPacke
 	int ret;
 
 	/* send the frame to the encoder */
-	if (frame)
-		printf("Send frame %3" PRId64 "\n", frame->pts);
+	//if (frame)
+	//	printf("Send frame %3" PRId64 "\n", frame->pts);
 
 	ret = avcodec_send_frame(enc_ctx, frame);
 	if (ret < 0) {
@@ -30,9 +33,11 @@ void QVideoWriter::encode_frame(AVCodecContext *enc_ctx, AVFrame *frame, AVPacke
 		else if (ret < 0) {
 			throw VideoWriterError("Error during encoding\n");
 		}
+		av_packet_rescale_ts(pkt, c->time_base, video_stream->time_base);
+		pkt->stream_index = video_stream->index;
 
-		printf("Write packet %3" PRId64 " (size=%5d)\n", pkt->pts, pkt->size);
-		fwrite(pkt->data, 1, pkt->size, outfile);
+		//printf("Write packet %3" PRId64 " (size=%5d)\n", pkt->pts, pkt->size);
+		av_write_frame(output_c, pkt);
 		av_packet_unref(pkt);
 	}
 }
@@ -44,29 +49,50 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 
 	video_filename = filename;
 
-	int ret;
 	//Setup FFmpeg correctly
+	int ret;
+
+	output_f = av_guess_format(NULL, filename.toStdString().c_str(), NULL);
+	if (!output_f) {
+		output_f = av_guess_format("mpeg", NULL, NULL);
+	}
+
+	avformat_alloc_output_context2(&output_c, NULL, NULL, filename.toStdString().c_str());
+	if(!output_c) {
+		throw VideoWriterError("Error allocating format context\n");
+	}
+	output_c->oformat = output_f;
+
 	QString codec_name = "mpeg4";
+	
 	codec = avcodec_find_encoder_by_name(codec_name.toStdString().c_str());
 	if (!codec) {
 		QString error_msg = QString("Codec %1 not found\n").arg(codec_name);
 		throw VideoWriterError( error_msg.toStdString() );
 	}
+	
 
-	c = avcodec_alloc_context3(codec);
-	if (!c) {
-		throw VideoWriterError( "Could not allocate video codec context\n");
+	video_stream= avformat_new_stream(output_c, codec);
+	if(!video_stream)
+	{
+		throw VideoWriterError("Could not allocate stream\n");
 	}
 
 	pkt = av_packet_alloc();
 	if (!pkt)
 		throw VideoWriterError( "Could not allocate packet buffer\n");
 
+	c = avcodec_alloc_context3(codec);
+	if (!c) {
+		throw VideoWriterError( "Could not allocate video codec context\n");
+	}
 	/* put sample parameters */
 	c->bit_rate = 400000;
 	/* resolution must be a multiple of two */
 	c->width = width;
 	c->height = height;
+	c->coded_width = width;
+	c->coded_height = height;
 	/* frames per second */
 	c->time_base = (AVRational){1, fps};
 	c->framerate = (AVRational){fps, 1};
@@ -77,11 +103,10 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	* then gop_size is ignored and the output of encoder
 	* will always be I frame irrespective to gop_size
 	*/
-	c->gop_size = 10;
-	c->max_b_frames = 1;
+	c->gop_size = 0;
 	c->pix_fmt = AV_PIX_FMT_YUV420P;
 
-	if (codec->id == AV_CODEC_ID_H264)
+	if (codec->id == AV_CODEC_ID_MPEG4)
 		av_opt_set(c->priv_data, "preset", "slow", 0);
 
 	/* open it */
@@ -90,12 +115,8 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 		QString error_msg = QString("Could not open codec error code %1\n").arg(ret);
 		throw VideoWriterError( error_msg.toStdString() );
 	}
-
-	video_file = fopen(video_filename.toStdString().c_str(), "wb");
-	if (!video_file) {
-		QString error_msg = QString("Could not open file %1\n").arg(video_filename);
-		throw VideoWriterError( error_msg.toStdString() );
-	}
+	avcodec_parameters_from_context(video_stream->codecpar, c);
+	video_stream->time_base = (AVRational){1, fps};
 
 	frame = av_frame_alloc();
 	if (!frame) {
@@ -108,6 +129,17 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	ret = av_frame_get_buffer(frame, 32);
 	if (ret < 0) {
 		throw VideoWriterError( "Could not allocate the video frame data\n");
+	}
+
+	if (avio_open(&output_c->pb, filename.toStdString().c_str(), AVIO_FLAG_WRITE) < 0)
+	{
+		QString error_msg = QString("Could not open file %1\n").arg(filename);
+		throw VideoWriterError( error_msg.toStdString() );
+	}
+
+	ret = avformat_write_header(output_c, NULL);
+	if (ret < 0) {
+		throw VideoWriterError( "Error writing file header\n");
 	}
 
 	frame_cnt = 0;
@@ -152,13 +184,11 @@ void QVideoWriter::addFrame(const QImage &frame_image) {
 void QVideoWriter::finish() {
 	encode_frame(c, NULL, pkt, video_file);
 
-	/* add sequence end code to have a real MPEG file */
-	if (codec->id == AV_CODEC_ID_MPEG1VIDEO || codec->id == AV_CODEC_ID_MPEG2VIDEO)
-		fwrite(endcode, 1, sizeof(&endcode), video_file);
-	fclose(video_file);
+	av_write_trailer(output_c);
 
 	avcodec_free_context(&c);
 	av_frame_free(&frame);
 	av_packet_free(&pkt);
+	avformat_free_context(output_c);
 }
 
