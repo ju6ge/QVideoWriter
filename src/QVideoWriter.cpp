@@ -63,7 +63,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	}
 	output_c->oformat = output_f;
 
-	QString codec_name = "mpeg4";
+	QString codec_name = "libx264";
 	
 	codec = avcodec_find_encoder_by_name(codec_name.toStdString().c_str());
 	if (!codec) {
@@ -106,8 +106,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	c->gop_size = 0;
 	c->pix_fmt = AV_PIX_FMT_YUV420P;
 
-	if (codec->id == AV_CODEC_ID_MPEG4)
-		av_opt_set(c->priv_data, "preset", "slow", 0);
+	av_opt_set(c->priv_data, "crf", "0", 0);
 
 	/* open it */
 	ret = avcodec_open2(c, codec, NULL);
