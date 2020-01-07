@@ -12,6 +12,11 @@ QVideoWriter::QVideoWriter(): endcode{ 0, 0, 1, 0xb7 } {
 	frame = nullptr;
 	pkt = nullptr;
 	img_convert_ctx = nullptr;
+
+	#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58,9,100)
+		avcodec_register_all();
+		av_register_all();
+	#endif
 }
 
 void QVideoWriter::encode_frame(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile) {
