@@ -71,14 +71,16 @@ macro(find_component _component _pkgconfig _library _header)
     HINTS
       ${PC_LIB${_component}_INCLUDEDIR}
       ${PC_LIB${_component}_INCLUDE_DIRS}
+	PATHS ENV FFMPEG_SEARCH_INCLUDE
     PATH_SUFFIXES
       ffmpeg
   )
 
   find_library(${_component}_LIBRARIES NAMES ${_library}
-      HINTS
+     HINTS
       ${PC_LIB${_component}_LIBDIR}
       ${PC_LIB${_component}_LIBRARY_DIRS}
+     PATHS ENV FFMPEG_SEARCH_LIB
   )
 
   set(${_component}_DEFINITIONS  ${PC_${_component}_CFLAGS_OTHER} CACHE STRING "The ${_component} CFLAGS.")
