@@ -99,8 +99,8 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 	c->coded_width = width;
 	c->coded_height = height;
 	/* frames per second */
-	c->time_base = (AVRational){1, fps};
-	c->framerate = (AVRational){fps, 1};
+	c->time_base = AVRational{1, fps};
+	c->framerate = AVRational{fps, 1};
 
 	/* emit one intra frame every ten frames
 	* check frame pict_type before passing frame
@@ -120,7 +120,7 @@ void QVideoWriter::createVideo(QString filename, int width, int height, int fps)
 		throw VideoWriterError( error_msg.toStdString() );
 	}
 	avcodec_parameters_from_context(video_stream->codecpar, c);
-	video_stream->time_base = (AVRational){1, fps};
+	video_stream->time_base = AVRational{1, fps};
 
 	frame = av_frame_alloc();
 	if (!frame) {
